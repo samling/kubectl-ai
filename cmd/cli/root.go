@@ -34,6 +34,7 @@ var (
 	azureModelMap        = flag.StringToString("azure-openai-map", env.GetOr("AZURE_OPENAI_MAP", env.Map(env.String, "=", env.String, ""), map[string]string{}), "The mapping from OpenAI model to Azure OpenAI deployment. Defaults to empty map. Example format: gpt-3.5-turbo=my-deployment.")
 	requireConfirmation  = flag.Bool("require-confirmation", env.GetOr("REQUIRE_CONFIRMATION", strconv.ParseBool, true), "Whether to require confirmation before executing the command. Defaults to true.")
 	temperature          = flag.Float64("temperature", env.GetOr("TEMPERATURE", env.WithBitSize(strconv.ParseFloat, 64), 0.0), "The temperature to use for the model. Range is between 0 and 1. Set closer to 0 if your want output to be more deterministic but less creative. Defaults to 0.0.")
+	skipApply            = flag.Bool("skip-apply", false, "Whether to skip the apply propmt. Defaults to false.")
 	raw                  = flag.Bool("raw", false, "Prints the raw YAML output immediately. Defaults to false.")
 	usek8sAPI            = flag.Bool("use-k8s-api", env.GetOr("USE_K8S_API", strconv.ParseBool, false), "Whether to use the Kubernetes API to create resources with function calling. Defaults to false.")
 	k8sOpenAPIURL        = flag.String("k8s-openapi-url", env.GetOr("K8S_OPENAPI_URL", env.String, ""), "The URL to a Kubernetes OpenAPI spec. Only used if use-k8s-api flag is true.")
@@ -90,6 +91,7 @@ func printDebugFlags() {
 	log.Debugf("temperature: %f", *temperature)
 	log.Debugf("use-k8s-api: %t", *usek8sAPI)
 	log.Debugf("k8s-openapi-url: %s", *k8sOpenAPIURL)
+	log.Debugf("skip-apply: %s", strconv.FormatBool(*skipApply))
 }
 
 func run(args []string) error {
@@ -118,17 +120,27 @@ func run(args []string) error {
 
 		s.Stop()
 
+		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
+		if err != nil {
+			return err
+		}
+
 		if *raw {
 			completion = trimTicks(completion)
 			fmt.Println(completion)
 			return nil
 		}
 
-		text := fmt.Sprintf("✨ Attempting to apply the following manifest:\n%s", completion)
-		r, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
-		if err != nil {
-			return err
+		if *skipApply {
+			out, err := glamour.Render(completion, "dark")
+			if err != nil {
+				return err
+			}
+			fmt.Print(out)
+			return nil
 		}
+
+		text := fmt.Sprintf("✨ Attempting to apply the following manifest:\n%s", completion)
 		out, err := r.Render(text)
 		if err != nil {
 			return err
